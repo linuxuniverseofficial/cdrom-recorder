@@ -19,7 +19,7 @@ SOUND_DURATION    = 0.5
 proc           = None
 faixa          = 0
 estado         = "PRONTO"
-sync_ativo     = False
+sync_ativo     = True
 ultimo_rms     = 0.0
 log_msgs       = []
 blink          = False
@@ -402,6 +402,9 @@ def main():
         cls()
         if proc:
             try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except: pass
+        if proc_play and proc_play.poll() is None:
+            try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
             except: pass
         print("Ate logo.")
 
