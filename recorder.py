@@ -75,7 +75,7 @@ def modo_atual():
 
 def audio_cmd_capture():
     m = modo_atual()
-    if m == "CDROM":   return "cdparanoia -d /dev/sr1 -B - 2>/dev/null"
+    if m == "CDROM":   return "cdparanoia -d /dev/sr1 -- -1 - 2>/dev/null"
     if m == "LINEIN":  return f"arecord -D {LINEIN_DEV} -f cd -t raw"
     return f"parec --device={SINK_MONITOR} --format=s16le --rate=44100 --channels=2"
 
@@ -139,8 +139,23 @@ def toggle_bandeja():
         subprocess.run(["eject", CD_DEV], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         bandeja_aberta = True
 
-# -- Play/Pause do CD fonte (sr1) --------------------------
-proc_play = None
+# -- Play/Pause/Faixa do CD fonte (sr1) -------------------
+proc_play  = None
+faixa_src  = 1
+total_faixas = 99  # cvlc navega sozinho, mas controlamos o numero
+
+def _play_faixa(n):
+    global proc_play, faixa_src
+    # mata processo anterior
+    if proc_play and proc_play.poll() is None:
+        try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
+        except: pass
+        proc_play = None
+    faixa_src = max(1, n)
+    cmd = f"cvlc --no-video cdda:///dev/sr1#{faixa_src} 2>/dev/null"
+    proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log(f"CD tocando faixa {faixa_src:02d}...")
 
 def toggle_play():
     global proc_play
@@ -150,10 +165,13 @@ def toggle_play():
         proc_play = None
         log("CD fonte pausado")
     else:
-        cmd = "cvlc --no-video cdda:///dev/sr1 2>/dev/null"
-        proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log("CD fonte tocando...")
+        _play_faixa(faixa_src)
+
+def proxima_faixa():
+    _play_faixa(faixa_src + 1)
+
+def faixa_anterior():
+    _play_faixa(max(1, faixa_src - 1))
 
 # ── Monitor RMS ───────────────────────────────────────────
 def monitor_rms():
@@ -302,6 +320,10 @@ def draw_ui():
         (" 7 INPUT ",     mcor),
         (" 8 BANDEJA ",   WHITE),
         (" 9 PLAY/PAUSE ", GREEN),
+        ("  +  PROXIMA  ", CYAN),
+        ("  -  ANTERIOR ", CYAN),
+        (" + PROXIMA ",    CYAN),
+        (" - ANTERIOR ",   CYAN),
         (" 0 SAIR ",      WHITE),
     ]
     menu_str   = ""
@@ -353,6 +375,8 @@ def main():
         '7': toggle_modo,
         '8': toggle_bandeja,
         '9': toggle_play,
+        '+': proxima_faixa,
+        '-': faixa_anterior,
     }
 
     try:
