@@ -1,0 +1,14 @@
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
+sudo nano /etc/systemd/system/getty@tty1.service.d/autologin.conf
+
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin seuusuario --noclear %I $TERM
+
+nano ~/.bash_profile
+
+# roda o gravador automaticamente ao logar no tty1
+if [ "$(tty)" = "/dev/tty1" ]; then
+    python3 /home/administrador/recorder.py
+fi
+
