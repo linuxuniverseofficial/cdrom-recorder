@@ -378,6 +378,12 @@ def draw(stdscr):
 
 # ── Entry point ───────────────────────────────────────────
 if __name__ == "__main__":
+    # aguarda terminal estabilizar (importante no autologin TTY)
+    time.sleep(2)
+    
+    # força tipo de terminal
+    os.environ.setdefault("TERM", "linux")
+    
     try:
         curses.wrapper(draw)
     except KeyboardInterrupt:
