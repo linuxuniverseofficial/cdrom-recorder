@@ -7,12 +7,7 @@ import sys, os, time, signal, subprocess, threading, re, tty, termios, select
 
 # ── Dispositivos ──────────────────────────────────────────
 CD_DEV       = "/dev/sr0"
-LINEIN_DEV   = "hw:1,0"
 SINK_MONITOR = "$(pactl get-default-sink).monitor"
-
-# ── Control files ─────────────────────────────────────────
-CTRL_CDROM  = "/tmp/cdrom"
-CTRL_LINEIN = "/tmp/linein"
 
 # ── Thresholds ────────────────────────────────────────────
 SILENCE_THRESHOLD = 0.002
@@ -26,13 +21,11 @@ faixa          = 0
 estado         = "PRONTO"
 sync_ativo     = False
 ultimo_rms     = 0.0
-modo_idx       = 0
 log_msgs       = []
 blink          = False
 running        = True
 bandeja_aberta = False
 
-MODOS = ["DESKTOP", "LINEIN", "CDROM"]
 
 # ── ANSI ─────────────────────────────────────────────────
 ESC = "\033"
@@ -67,29 +60,12 @@ def log(msg):
     log_msgs.append(f"{ts}  {msg}")
     if len(log_msgs) > 5: log_msgs.pop(0)
 
-# ── Modo de input ─────────────────────────────────────────
-def modo_atual():
-    if os.path.exists(CTRL_CDROM):  return "CDROM"
-    if os.path.exists(CTRL_LINEIN): return "LINEIN"
-    return MODOS[modo_idx]
-
+# ── Audio source (sempre desktop loopback) ────────────────
 def audio_cmd_capture():
-    m = modo_atual()
-    if m == "CDROM":   return "cdparanoia -d /dev/sr1 -- -1 - 2>/dev/null"
-    if m == "LINEIN":  return f"arecord -D {LINEIN_DEV} -f cd -t raw"
     return f"parec --device={SINK_MONITOR} --format=s16le --rate=44100 --channels=2"
 
 def audio_cmd_rms():
-    m = modo_atual()
-    if m == "LINEIN": return f"arecord -D {LINEIN_DEV} -f cd -t raw --latency-time=500000"
     return f"parec --device={SINK_MONITOR} --format=s16le --rate=44100 --channels=2 --latency-msec=500"
-
-def toggle_modo():
-    global modo_idx
-    if os.path.exists(CTRL_CDROM) or os.path.exists(CTRL_LINEIN):
-        log("Control file ativo — rm /tmp/cdrom ou /tmp/linein"); return
-    modo_idx = (modo_idx + 1) % len(MODOS)
-    log(f"Input -> {MODOS[modo_idx]}")
 
 # ── Acoes de gravacao ─────────────────────────────────────
 def iniciar_gravacao(auto=False):
@@ -99,7 +75,7 @@ def iniciar_gravacao(auto=False):
     cmd = f"{audio_cmd_capture()} | wodim dev={CD_DEV} -tao -audio -swab -"
     proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} [{modo_atual()}]")
+    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d}")
 
 def pausar(auto=False):
     global proc, estado
@@ -152,7 +128,7 @@ def _play_faixa(n):
         except: pass
         proc_play = None
     faixa_src = max(1, n)
-    cmd = f"cvlc --no-video cdda:///dev/sr1#{faixa_src} 2>/dev/null"
+    cmd = f"cvlc --no-video --cdda-track={faixa_src} --play-and-stop cdda:///dev/sr1 2>/dev/null"
     proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     log(f"CD tocando faixa {faixa_src:02d}...")
@@ -220,8 +196,6 @@ def draw_ui():
     cols = sz.columns
     W    = cols - 2   # largura interna
 
-    modo = modo_atual()
-    mcor = {"DESKTOP": CYAN, "LINEIN": YELLOW, "CDROM": MAGENTA}.get(modo, WHITE)
 
     # cada elemento e uma linha — imprime de cima pra baixo
     L = []  # lista de linhas prontas (sem \n, sem escape de borda embutido)
@@ -254,12 +228,6 @@ def draw_ui():
     L.append(sep_line())
 
     # modo input
-    ctrl = ""
-    if os.path.exists(CTRL_CDROM):    ctrl = " [/tmp/cdrom]"
-    elif os.path.exists(CTRL_LINEIN): ctrl = " [/tmp/linein]"
-    input_plain   = f"INPUT: {modo}{ctrl}"
-    input_colored = B + mcor + input_plain + R
-    L.append(border(input_plain, input_colored))
 
     L.append(sep_line())
 
@@ -302,7 +270,7 @@ def draw_ui():
 
     # preenche linhas vazias ate o menu
     used     = len(L)
-    menu_pos = rows - 3   # 1 sep + 1 menu + 1 fundo
+    menu_pos = rows - 4   # 1 sep + 2 linhas menu + 1 fundo
     empties  = menu_pos - used - 1
     for _ in range(max(0, empties)):
         L.append(border(""))
@@ -310,30 +278,34 @@ def draw_ui():
     # separador menu
     L.append(sep_line())
 
-    # menu
-    itens = [
+    # menu — linha 1: gravacao
+    linha1 = [
         (" 2 GRAVAR ",    RED),
         (" 3 PAUSAR ",    YELLOW),
         (" 4 CONTINUAR ", GREEN),
         (" 5 FINALIZAR ", CYAN),
-        (" 6 SYNC ",      MAGENTA),
-        (" 7 INPUT ",     mcor),
-        (" 8 BANDEJA ",   WHITE),
-        (" 9 PLAY/PAUSE ", GREEN),
-        ("  +  PROXIMA  ", CYAN),
-        ("  -  ANTERIOR ", CYAN),
-        (" + PROXIMA ",    CYAN),
-        (" - ANTERIOR ",   CYAN),
         (" 0 SAIR ",      WHITE),
     ]
-    menu_str   = ""
-    menu_plain = ""
-    for txt, cor in itens:
-        if len(menu_plain) + len(txt) + 2 > W: break
-        menu_str   += B + RV + cor + txt + R + "  "
-        menu_plain += txt + "  "
-    pad = max(0, (W - len(menu_plain)) // 2)
-    L.append(DM + "║" + R + " " * pad + menu_str + " " * max(0, W - len(menu_plain) - pad) + DM + "║" + R)
+    # menu — linha 2: player + misc
+    linha2 = [
+        (" 9 PLAY ",      GREEN),
+        (" + PROXIMA ",   CYAN),
+        (" - ANTERIOR ",  CYAN),
+        (" 6 SYNC ",      MAGENTA),
+        (" 8 BANDEJA ",   WHITE),
+    ]
+
+    def render_menu_line(itens):
+        ms = ""; mp = ""
+        for txt, cor in itens:
+            if len(mp) + len(txt) + 2 > W: break
+            ms += B + RV + cor + txt + R + "  "
+            mp += txt + "  "
+        pad = max(0, (W - len(mp)) // 2)
+        return DM + "║" + R + " " * pad + ms + " " * max(0, W - len(mp) - pad) + DM + "║" + R
+
+    L.append(render_menu_line(linha1))
+    L.append(render_menu_line(linha2))
 
     # fundo
     L.append(DM + "╚" + "═" * W + "╝" + R)
@@ -372,7 +344,6 @@ def main():
         '4': continuar,
         '5': finalizar,
         '6': toggle_sync,
-        '7': toggle_modo,
         '8': toggle_bandeja,
         '9': toggle_play,
         '+': proxima_faixa,
