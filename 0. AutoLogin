@@ -7,8 +7,10 @@ ExecStart=-/sbin/agetty --autologin seuusuario --noclear %I $TERM
 
 nano ~/.bash_profile
 
-# roda o gravador automaticamente ao logar no tty1
 if [ "$(tty)" = "/dev/tty1" ]; then
-    python3 /home/administrador/recorder.py
+    sleep 3
+    #pulseaudio --start 2>/dev/null
+    sleep 1
+    TERM=linux python3 ~/cd-recorder.py
 fi
 
