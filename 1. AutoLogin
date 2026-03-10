@@ -8,6 +8,8 @@ Type=idle
 
 nano ~/.bash_profile
 
+amixer sset 'Front' unmute
+amixer sset 'Front' 80%
 if [ "$(tty)" = "/dev/tty1" ]; then
     sleep 1
     TERM=linux python3 /usr/local/bin/recorder.py
