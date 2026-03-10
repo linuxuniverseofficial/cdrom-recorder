@@ -3,14 +3,13 @@ sudo nano /etc/systemd/system/getty@tty1.service.d/autologin.conf
 
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin seuusuario --noclear %I $TERM
+ExecStart=-/sbin/agetty --autologin administrador --noclear %I $TERM
 
 nano ~/.bash_profile
 
 if [ "$(tty)" = "/dev/tty1" ]; then
     sleep 3
-    #pulseaudio --start 2>/dev/null
+    pulseaudio --start 2>/dev/null
     sleep 1
-    TERM=linux python3 ~/cd-recorder.py
+    TERM=linux python3 /usr/local/bin/recorder.py
 fi
-
