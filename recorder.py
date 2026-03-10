@@ -19,13 +19,38 @@ SOUND_DURATION    = 0.5
 proc           = None
 faixa          = 0
 estado         = "PRONTO"
-sync_ativo     = False
+sync_ativo     = True
 ultimo_rms     = 0.0
 log_msgs       = []
 blink          = False
 running        = True
 bandeja_aberta = False
 
+
+
+# ── Leitura do TOC do disco ───────────────────────────────
+def ler_faixas_disco():
+    """
+    Lê o TOC do disco em sr0 e retorna quantas faixas já foram gravadas.
+    Retorna 0 se disco estiver vazio ou não conseguir ler.
+    """
+    try:
+        r = subprocess.run(
+            ["wodim", f"dev={CD_DEV}", "-toc"],
+            capture_output=True, text=True, timeout=15
+        )
+        output = r.stdout + r.stderr
+        # procura linhas tipo "track: X"
+        faixas = 0
+        for linha in output.splitlines():
+            m = re.search(r"track:\\s*(\\d+)", linha, re.IGNORECASE)
+            if m:
+                n = int(m.group(1))
+                if n < 170:  # ignora lead-out (track 170/0xAA)
+                    faixas = max(faixas, n)
+        return faixas
+    except Exception:
+        return 0
 
 # ── ANSI ─────────────────────────────────────────────────
 ESC = "\033"
@@ -95,9 +120,12 @@ def finalizar():
         try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except: pass
         proc = None
-    subprocess.run(["wodim", f"dev={CD_DEV}", "-fix"],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    estado = "CONCLUIDO"; log("Disco finalizado!")
+    def _fix():
+        global estado
+        subprocess.run(["wodim", f"dev={CD_DEV}", "-fix"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        estado = "CONCLUIDO"; log("Disco finalizado!")
+    threading.Thread(target=_fix, daemon=True).start()
 
 def toggle_sync():
     global sync_ativo
@@ -329,11 +357,21 @@ def get_key():
 
 # ── Main ──────────────────────────────────────────────────
 def main():
-    global running
+    global running, faixa, estado
     time.sleep(2)
     os.environ.setdefault("TERM", "linux")
     hide_cursor()
     cls()
+
+    # lê TOC do disco — continua de onde parou
+    log("Lendo disco...")
+    faixas_existentes = ler_faixas_disco()
+    if faixas_existentes > 0:
+        faixa = faixas_existentes
+        estado = "PAUSADO"
+        log(f"Disco tem {faixas_existentes} faixa(s) — continuando")
+    else:
+        log("Disco vazio — pronto para gravar")
 
     threading.Thread(target=blink_loop,  daemon=True).start()
     threading.Thread(target=monitor_rms, daemon=True).start()
