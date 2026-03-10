@@ -150,7 +150,7 @@ def toggle_play():
         proc_play = None
         log("CD fonte pausado")
     else:
-        cmd = "mplayer -cdrom-device /dev/sr1 cdda://"
+        cmd = "cvlc --no-video cdda:///dev/sr1 2>/dev/null"
         proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log("CD fonte tocando...")
