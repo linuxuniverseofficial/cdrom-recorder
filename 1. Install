@@ -9,3 +9,5 @@ sudo apt install sox -y
 
 # cdparanoia (para modo CDROM)
 sudo apt install cdparanoia -y
+
+sudo ln -s /usr/bin/wodim /usr/local/bin/cdrecord
