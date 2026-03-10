@@ -1,5 +1,5 @@
 # cdrecord (wodim é o fork no Ubuntu)
-sudo apt install wodim -y
+sudo apt install wodim alsa-utils -y
 
 # pactl + parec (PulseAudio)
 sudo apt install pulseaudio pulseaudio-utils -y
