@@ -139,6 +139,22 @@ def toggle_bandeja():
         subprocess.run(["eject", CD_DEV], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         bandeja_aberta = True
 
+# -- Play/Pause do CD fonte (sr1) --------------------------
+proc_play = None
+
+def toggle_play():
+    global proc_play
+    if proc_play and proc_play.poll() is None:
+        try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
+        except: pass
+        proc_play = None
+        log("CD fonte pausado")
+    else:
+        cmd = "cdparanoia -d /dev/sr1 -B - 2>/dev/null | aplay -f cd -q"
+        proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("CD fonte tocando...")
+
 # ── Monitor RMS ───────────────────────────────────────────
 def monitor_rms():
     global ultimo_rms
@@ -285,6 +301,7 @@ def draw_ui():
         (" 6 SYNC ",      MAGENTA),
         (" 7 INPUT ",     mcor),
         (" 8 BANDEJA ",   WHITE),
+        (" 9 PLAY/PAUSE ", GREEN),
         (" 0 SAIR ",      WHITE),
     ]
     menu_str   = ""
@@ -335,6 +352,7 @@ def main():
         '6': toggle_sync,
         '7': toggle_modo,
         '8': toggle_bandeja,
+        '9': toggle_play,
     }
 
     try:
