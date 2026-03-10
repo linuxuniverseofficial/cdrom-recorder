@@ -1,0 +1,11 @@
+# cdrecord (wodim é o fork no Ubuntu)
+sudo apt install wodim
+
+# pactl + parec (PulseAudio)
+sudo apt install pulseaudio pulseaudio-utils
+
+# sox
+sudo apt install sox
+
+# cdparanoia (para modo CDROM)
+sudo apt install cdparanoia
