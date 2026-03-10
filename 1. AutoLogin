@@ -9,8 +9,6 @@ Type=idle
 nano ~/.bash_profile
 
 if [ "$(tty)" = "/dev/tty1" ]; then
-    sleep 3
-    pulseaudio --start 2>/dev/null
     sleep 1
     TERM=linux python3 /usr/local/bin/recorder.py
 fi
