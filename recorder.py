@@ -356,7 +356,7 @@ def draw_ui():
     # estado
     estado_map = {
         "PRONTO":      ("PRONTO",        WHITE,  False),
-        "AGUARDANDO":  (aguardando_str(), YELLOW, True),
+        "AGUARDANDO":  ("GRAVANDO",        RED,    True),
         "GRAVANDO":    ("GRAVANDO",       RED,    True),
         "PAUSADO":     ("PAUSADO",        YELLOW, True),
         "FINALIZANDO": ("FINALIZANDO...", YELLOW, False),
@@ -479,6 +479,7 @@ def main():
     }
 
     try:
+        global finalizar_pendente
         while True:
             draw_ui()
             key = get_key()
