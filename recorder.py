@@ -98,7 +98,8 @@ def audio_cmd_capture():
     return f"parec --device={get_sink_monitor()} --format=s16le --rate=44100 --channels=2"
 
 def audio_cmd_rms():
-    return f"parec --device={get_sink_monitor()} --format=s16le --rate=44100 --channels=2 --latency-msec=500"
+    # resolve sink em runtime via subshell
+    return "parec --device=$(pactl get-default-sink).monitor --format=s16le --rate=44100 --channels=2"
 
 # ── Acoes de gravacao ─────────────────────────────────────
 def iniciar_gravacao(auto=False):
@@ -268,12 +269,10 @@ def abrir_alsamixer():
 
 # ── Monitor RMS ───────────────────────────────────────────
 def monitor_rms():
+    """Atualiza VU meter sempre. SYNC age só se ativo."""
     global ultimo_rms
     silencio_desde = som_desde = None
     while running:
-        if not sync_ativo:
-            silencio_desde = som_desde = None
-            time.sleep(0.3); continue
         try:
             r = subprocess.run(
                 f"{audio_cmd_rms()} | sox -t raw -r 44100 -c 2 -b 16 -e signed - -n trim 0 0.4 stat 2>&1",
@@ -284,19 +283,24 @@ def monitor_rms():
                     m = re.search(r"[\d.]+$", linha)
                     if m: rms = float(m.group()); break
             ultimo_rms = rms
-            agora = time.time()
-            if estado == "GRAVANDO":
-                if rms < SILENCE_THRESHOLD:
-                    if silencio_desde is None: silencio_desde = agora
-                    elif agora - silencio_desde >= SILENCE_DURATION:
-                        pausar(auto=True); silencio_desde = som_desde = None
-                else: silencio_desde = None
-            elif estado == "PAUSADO":
-                if rms > SOUND_THRESHOLD:
-                    if som_desde is None: som_desde = agora
-                    elif agora - som_desde >= SOUND_DURATION:
-                        iniciar_gravacao(auto=True); som_desde = silencio_desde = None
-                else: som_desde = None
+
+            # SYNC — so age se ativo
+            if sync_ativo:
+                agora = time.time()
+                if estado == "GRAVANDO":
+                    if rms < SILENCE_THRESHOLD:
+                        if silencio_desde is None: silencio_desde = agora
+                        elif agora - silencio_desde >= SILENCE_DURATION:
+                            pausar(auto=True); silencio_desde = som_desde = None
+                    else: silencio_desde = None
+                elif estado == "PAUSADO":
+                    if rms > SOUND_THRESHOLD:
+                        if som_desde is None: som_desde = agora
+                        elif agora - som_desde >= SOUND_DURATION:
+                            iniciar_gravacao(auto=True); som_desde = silencio_desde = None
+                    else: som_desde = None
+            else:
+                silencio_desde = som_desde = None
         except: time.sleep(0.5)
 
 # ── Blink ─────────────────────────────────────────────────
@@ -458,6 +462,8 @@ def main():
     global running, faixa, estado
     time.sleep(2)
     os.environ.setdefault("TERM", "linux")
+    os.environ.setdefault("PULSE_RUNTIME_PATH", f"/run/user/{os.getuid()}/pulse")
+    os.environ.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
     hide_cursor()
     cls()
 
