@@ -12,3 +12,8 @@ sudo apt install cdparanoia -y
 
 # Adjust font to 8x18
 sudo dpkg-reconfigure console-setup
+
+# FOR SYNC
+sudo apt install libportaudio2 python3-pip
+pip install sounddevice --break-system-packages
+pip install numpy --break-system-packages
