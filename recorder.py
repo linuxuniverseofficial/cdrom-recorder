@@ -100,6 +100,9 @@ def iniciar_gravacao(auto=False):
     cmd = f"{audio_cmd_capture()} | wodim dev={CD_DEV} -tao -audio -swab -"
     proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # salva PID do grupo para matar mesmo se Python crashar
+    with open("/tmp/recorder.pid", "w") as f:
+        f.write(str(os.getpgid(proc.pid)))
     log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d}")
 
 def pausar(auto=False):
@@ -107,7 +110,15 @@ def pausar(auto=False):
     if proc:
         try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except: pass
+        time.sleep(0.3)
+        try: os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except: pass
         proc = None
+    # garante que wodim morreu mesmo que proc já fosse None
+    subprocess.run(["pkill", "-9", "wodim"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["pkill", "-9", "parec"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try: os.remove("/tmp/recorder.pid")
+    except: pass
     estado = "PAUSADO"
     log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} fechada")
 
@@ -148,9 +159,20 @@ proc_play  = None
 faixa_src  = 1
 total_faixas = 99  # cvlc navega sozinho, mas controlamos o numero
 
+def _matar_cvlc():
+    global proc_play
+    if proc_play and proc_play.poll() is None:
+        try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
+        except: pass
+        time.sleep(0.3)
+        try: os.killpg(os.getpgid(proc_play.pid), signal.SIGKILL)
+        except: pass
+    subprocess.run(["pkill", "-9", "vlc"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc_play = None
+
 def _play_faixa(n):
     global proc_play, faixa_src
-    # mata processo anterior
+    # kill suave para skip normal
     if proc_play and proc_play.poll() is None:
         try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
         except: pass
@@ -162,11 +184,8 @@ def _play_faixa(n):
     log(f"CD tocando faixa {faixa_src:02d}...")
 
 def toggle_play():
-    global proc_play
     if proc_play and proc_play.poll() is None:
-        try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
-        except: pass
-        proc_play = None
+        _matar_cvlc()
         log("CD fonte pausado")
     else:
         _play_faixa(faixa_src)
@@ -176,6 +195,12 @@ def proxima_faixa():
 
 def faixa_anterior():
     _play_faixa(max(1, faixa_src - 1))
+
+def abrir_alsamixer():
+    show_cursor()
+    subprocess.run(["alsamixer"], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+    hide_cursor()
+    cls()
 
 # ── Monitor RMS ───────────────────────────────────────────
 def monitor_rms():
@@ -320,7 +345,7 @@ def draw_ui():
         (" + PROXIMA ",   CYAN),
         (" - ANTERIOR ",  CYAN),
         (" 6 SYNC ",      MAGENTA),
-        (" 8 BANDEJA ",   WHITE),
+        (" , MIXER ",      WHITE),
     ]
 
     def render_menu_line(itens):
@@ -386,6 +411,7 @@ def main():
         '9': toggle_play,
         '+': proxima_faixa,
         '-': faixa_anterior,
+        ',': abrir_alsamixer,
     }
 
     try:
@@ -403,6 +429,12 @@ def main():
         if proc:
             try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except: pass
+        # mata via PID file caso proc já tenha sido perdido
+        try:
+            pid = int(open("/tmp/recorder.pid").read().strip())
+            os.killpg(pid, signal.SIGTERM)
+            os.remove("/tmp/recorder.pid")
+        except: pass
         if proc_play and proc_play.poll() is None:
             try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
             except: pass
