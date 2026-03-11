@@ -7,7 +7,15 @@ import sys, os, time, signal, subprocess, threading, re, tty, termios, select
 
 # ── Dispositivos ──────────────────────────────────────────
 CD_DEV       = "/dev/sr0"
-SINK_MONITOR = "$(pactl get-default-sink).monitor"
+def get_sink_monitor():
+    try:
+        sink = subprocess.check_output(
+            ["pactl", "get-default-sink"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+        return f"{sink}.monitor"
+    except:
+        return "alsa_output.pci-0000_00_1b.0.analog-stereo.monitor"
 
 # ── Thresholds ────────────────────────────────────────────
 SILENCE_THRESHOLD = 0.002
@@ -87,10 +95,10 @@ def log(msg):
 
 # ── Audio source (sempre desktop loopback) ────────────────
 def audio_cmd_capture():
-    return f"parec --device={SINK_MONITOR} --format=s16le --rate=44100 --channels=2"
+    return f"parec --device={get_sink_monitor()} --format=s16le --rate=44100 --channels=2"
 
 def audio_cmd_rms():
-    return f"parec --device={SINK_MONITOR} --format=s16le --rate=44100 --channels=2 --latency-msec=500"
+    return f"parec --device={get_sink_monitor()} --format=s16le --rate=44100 --channels=2 --latency-msec=500"
 
 # ── Acoes de gravacao ─────────────────────────────────────
 def iniciar_gravacao(auto=False):
@@ -107,20 +115,27 @@ def iniciar_gravacao(auto=False):
 
 def pausar(auto=False):
     global proc, estado
-    if proc:
-        try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except: pass
-        time.sleep(0.3)
-        try: os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except: pass
-        proc = None
-    # garante que wodim morreu mesmo que proc já fosse None
-    subprocess.run(["pkill", "-9", "wodim"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "parec"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try: os.remove("/tmp/recorder.pid")
-    except: pass
     estado = "PAUSADO"
-    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} fechada")
+    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} fechando...")
+    def _matar():
+        # SIGTERM — deixa o wodim fechar a faixa corretamente
+        if proc:
+            try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except: pass
+        # mata parec para parar o stream de entrada
+        subprocess.run(["pkill", "-TERM", "parec"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # espera o wodim fechar a faixa (até 10s)
+        for _ in range(100):
+            result = subprocess.run(["pgrep", "wodim"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode != 0:
+                break
+            time.sleep(0.1)
+        try: os.remove("/tmp/recorder.pid")
+        except: pass
+        log(f"Faixa {faixa:02d} fechada")
+    threading.Thread(target=_matar, daemon=True).start()
 
 def continuar():     iniciar_gravacao(auto=False)
 
@@ -145,6 +160,9 @@ def toggle_sync():
 
 def toggle_bandeja():
     global bandeja_aberta
+    if estado == "GRAVANDO":
+        log("ERRO: pause antes de ejetar!")
+        return
     if bandeja_aberta:
         log("Recolhendo bandeja...")
         subprocess.run(["eject", "-t", CD_DEV], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -197,8 +215,33 @@ def faixa_anterior():
     _play_faixa(max(1, faixa_src - 1))
 
 def abrir_alsamixer():
+    """Abre alsamixer remapeando * (ASCII 42) para ESC (ASCII 27)."""
+    import pty, select as sel
     show_cursor()
-    subprocess.run(["alsamixer"], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+    # cria pseudo-terminal para interceptar input
+    master, slave = pty.openpty()
+    p = subprocess.Popen(["alsamixer"], stdin=slave, stdout=sys.stdout, stderr=sys.stderr)
+    os.close(slave)
+    fd = sys.stdin.fileno()
+    old_attr = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        while p.poll() is None:
+            r, _, _ = sel.select([fd], [], [], 0.05)
+            if r:
+                ch = os.read(fd, 1)
+                if ch == b'*':
+                    os.write(master, b'\x1b')  # ESC
+                else:
+                    os.write(master, ch)
+    except Exception:
+        pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
+        try: os.close(master)
+        except: pass
+        try: p.terminate()
+        except: pass
     hide_cursor()
     cls()
 
