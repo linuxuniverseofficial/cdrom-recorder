@@ -8,8 +8,11 @@ import sys, os, time, signal, subprocess, threading, re, tty, termios, select
 import numpy as np
 
 # ── Dispositivos ──────────────────────────────────────────
-CD_DEV       = "/dev/sr0"
-PULSE_SOURCE = "alsa_output.pci-0000_00_1b.0.analog-stereo.monitor"
+CD_DEV        = "/dev/sr0"
+SOURCE_DESKTOP = "alsa_output.pci-0000_00_1b.0.analog-stereo.monitor"
+SOURCE_LINEIN  = "alsa_input.pci-0000_00_1b.0.analog-stereo"
+PULSE_SOURCE   = SOURCE_LINEIN  # default
+input_modo     = "LINEIN"
 
 # ── Thresholds SYNC ───────────────────────────────────────
 SILENCE_THRESHOLD = 0.005
@@ -24,9 +27,10 @@ estado         = "PRONTO"
 sync_ativo     = False
 ultimo_rms     = 0.0
 log_msgs       = []
-blink          = False
-running        = True
-bandeja_aberta = False
+blink              = False
+running            = True
+bandeja_aberta     = False
+finalizar_pendente = False
 
 # ── Leitura do TOC do disco ───────────────────────────────
 def ler_faixas_disco():
@@ -75,14 +79,26 @@ def log(msg):
     log_msgs.append(f"{ts}  {msg}")
     if len(log_msgs) > 5: log_msgs.pop(0)
 
+# ── Input mode ───────────────────────────────────────────
+def toggle_input():
+    global PULSE_SOURCE, input_modo
+    if input_modo == "DESKTOP":
+        input_modo   = "LINEIN"
+        PULSE_SOURCE = SOURCE_LINEIN
+    else:
+        input_modo   = "DESKTOP"
+        PULSE_SOURCE = SOURCE_DESKTOP
+    os.environ["PULSE_SOURCE"] = PULSE_SOURCE
+    log(f"Input: {input_modo}")
+
 # ── Audio source ──────────────────────────────────────────
 def audio_cmd_capture():
-    return "parec --device=alsa_output.pci-0000_00_1b.0.analog-stereo.monitor --format=s16le --rate=44100 --channels=2"
+    return f"parec --device={PULSE_SOURCE} --format=s16le --rate=44100 --channels=2"
 
 # ── Acoes de gravacao ─────────────────────────────────────
 def iniciar_gravacao(auto=False):
     global proc, faixa, estado, aguardando_desde
-    if estado in ("FINALIZANDO", "CONCLUIDO"): return
+    if estado in ("GRAVANDO", "AGUARDANDO", "FINALIZANDO", "CONCLUIDO"): return
     faixa += 1
     estado = "AGUARDANDO"
     aguardando_desde = time.time()
@@ -115,6 +131,7 @@ def iniciar_gravacao(auto=False):
 
 def pausar(auto=False):
     global proc, estado
+    if estado not in ("GRAVANDO", "AGUARDANDO"): return
     estado = "PAUSADO"
     log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} fechando...")
     _proc = proc  # captura referencia local antes de zerar
@@ -137,10 +154,17 @@ def pausar(auto=False):
         log(f"Faixa {faixa:02d} fechada")
     threading.Thread(target=_matar, daemon=True).start()
 
-def continuar(): iniciar_gravacao(auto=False)
 
 def finalizar():
-    global proc, estado
+    global proc, estado, finalizar_pendente
+    if not finalizar_pendente:
+        finalizar_pendente = True
+        log("Confirme: pressione 3 novamente para finalizar!")
+        return
+    finalizar_pendente = False
+    if estado == "GRAVANDO" or estado == "AGUARDANDO":
+        pausar()
+        time.sleep(1)
     estado = "FINALIZANDO"; log("Finalizando disco...")
     if proc:
         try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -317,13 +341,15 @@ def draw_ui():
     # topo
     L.append(DM + "╔" + "═" * W + "╗" + R)
 
-    # titulo + sync
+    # titulo + input + sync
     title      = " CD RECORDER "
-    sync_plain = "SYNC ON " if sync_ativo else "SYNC OFF"
-    sync_col   = B + GREEN + sync_plain + R if sync_ativo else DM + sync_plain + R
-    title_col  = B + CYAN + title + R
-    gap = W - len(title) - len(sync_plain) - 2
-    L.append(DM + "║" + R + title_col + " " * max(1, gap) + sync_col + " " + DM + "║" + R)
+    input_plain = f" {input_modo} "
+    input_col   = B + YELLOW + input_plain + R if input_modo == "LINEIN" else DM + input_plain + R
+    sync_plain  = "SYNC ON " if sync_ativo else "SYNC OFF"
+    sync_col    = B + GREEN + sync_plain + R if sync_ativo else DM + sync_plain + R
+    title_col   = B + CYAN + title + R
+    gap = W - len(title) - len(input_plain) - len(sync_plain) - 3
+    L.append(DM + "║" + R + title_col + " " * max(1, gap) + input_col + " " + sync_col + " " + DM + "║" + R)
 
     L.append(sep_line())
 
@@ -375,18 +401,17 @@ def draw_ui():
 
     # menu
     linha1 = [
-        (" 2 GRAVAR ",    RED),
-        (" 3 PAUSAR ",    YELLOW),
-        (" 4 CONTINUAR ", GREEN),
-        (" 5 FINALIZAR ", CYAN),
-        (" 0 SAIR ",      WHITE),
+        (" 1 GRAVAR ",    RED),
+        (" 2 PAUSAR ",    YELLOW),
+        (" 3 FINALIZAR ", CYAN),
     ]
     linha2 = [
-        (" 9 PLAY/PAUSE ", GREEN),
+        (" 4 INPUT ",      YELLOW),
+        (" 5 PLAY/PAUSE ", GREEN),
+        (" 6 SYNC ",       MAGENTA),
+        (" 7 MIXER ",      WHITE),
         (" + PROXIMA ",    CYAN),
         (" - ANTERIOR ",   CYAN),
-        (" 6 SYNC ",       MAGENTA),
-        (" , MIXER ",      WHITE),
     ]
 
     def render_menu_line(itens):
@@ -442,16 +467,15 @@ def main():
     threading.Thread(target=monitor_rms, daemon=True).start()
 
     ACOES = {
-        '2': lambda: iniciar_gravacao(False),
-        '3': lambda: pausar(False),
-        '4': continuar,
-        '5': finalizar,
+        '1': lambda: iniciar_gravacao(False),
+        '2': lambda: pausar(False),
+        '3': finalizar,
+        '4': toggle_input,
+        '5': toggle_play,
         '6': toggle_sync,
-        '8': toggle_bandeja,
-        '9': toggle_play,
+        '7': abrir_alsamixer,
         '+': proxima_faixa,
         '-': faixa_anterior,
-        ',': abrir_alsamixer,
     }
 
     try:
@@ -461,6 +485,9 @@ def main():
             if key in ('0', '\x03', '\r'): break
             if key and key in ACOES:
                 if estado not in ("FINALIZANDO", "CONCLUIDO"):
+                    if key != '3' and finalizar_pendente:
+                        finalizar_pendente = False
+                        log("Finalização cancelada")
                     ACOES[key]()
     finally:
         running = False
