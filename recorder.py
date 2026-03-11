@@ -102,16 +102,37 @@ def audio_cmd_rms():
 
 # ── Acoes de gravacao ─────────────────────────────────────
 def iniciar_gravacao(auto=False):
-    global proc, faixa, estado
+    global proc, faixa, estado, aguardando_desde
     if estado in ("FINALIZANDO", "CONCLUIDO"): return
-    faixa += 1; estado = "GRAVANDO"
-    cmd = f"{audio_cmd_capture()} | wodim dev={CD_DEV} -tao -audio -swab -"
-    proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # salva PID do grupo para matar mesmo se Python crashar
-    with open("/tmp/recorder.pid", "w") as f:
-        f.write(str(os.getpgid(proc.pid)))
-    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d}")
+    faixa += 1
+    estado = "AGUARDANDO"
+    aguardando_desde = time.time()
+    log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} aguardando...")
+
+    def _iniciar():
+        global proc, estado, aguardando_desde
+        time.sleep(3)
+        if estado != "AGUARDANDO": return  # cancelado antes de iniciar
+        cmd = f"{audio_cmd_capture()} | wodim dev={CD_DEV} speed=1 -tao -audio -swab -"
+        p = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        proc = p
+        with open("/tmp/recorder.pid", "w") as f:
+            f.write(str(os.getpgid(p.pid)))
+        # monitora stderr do wodim ate aparecer "write" ou "Starting"
+        for linha in p.stderr:
+            txt = linha.decode(errors="ignore").lower()
+            if "starting" in txt or "write" in txt or "tao" in txt:
+                estado = "GRAVANDO"
+                aguardando_desde = None
+                log(f"Faixa {faixa:02d} gravando")
+                break
+        # se saiu do loop sem achar, assume gravando mesmo assim
+        if estado == "AGUARDANDO":
+            estado = "GRAVANDO"
+            aguardando_desde = None
+
+    threading.Thread(target=_iniciar, daemon=True).start()
 
 def pausar(auto=False):
     global proc, estado
@@ -196,10 +217,10 @@ def _play_faixa(n):
         except: pass
         proc_play = None
     faixa_src = max(1, n)
-    cmd = f"cvlc --no-video --cdda-track={faixa_src} --play-and-stop cdda:///dev/sr1 2>/dev/null"
+    cmd = f"sleep 3 && cvlc --no-video --cdda-track={faixa_src} --play-and-stop cdda:///dev/sr1 2>/dev/null"
     proc_play = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log(f"CD tocando faixa {faixa_src:02d}...")
+    log(f"CD tocando faixa {faixa_src:02d} em 3s...")
 
 def toggle_play():
     if proc_play and proc_play.poll() is None:
@@ -286,6 +307,14 @@ def blink_loop():
         time.sleep(0.55)
 
 # ── UI ────────────────────────────────────────────────────
+aguardando_desde = None
+
+def aguardando_str():
+    if aguardando_desde is None: return "AGUARDANDO..."
+    secs = int(time.time() - aguardando_desde)
+    return f"AGUARDANDO  {secs:02d}s"
+
+
 def draw_ui():
     sz   = term_size()
     rows = sz.lines
@@ -329,11 +358,12 @@ def draw_ui():
 
     # estado
     estado_map = {
-        "PRONTO":      ("PRONTO",        WHITE,  False),
-        "GRAVANDO":    ("GRAVANDO",       RED,    True),
-        "PAUSADO":     ("PAUSADO",        YELLOW, True),
-        "FINALIZANDO": ("FINALIZANDO...", YELLOW, False),
-        "CONCLUIDO":   ("CONCLUIDO",      GREEN,  False),
+        "PRONTO":      ("PRONTO",          WHITE,  False),
+        "AGUARDANDO":  (aguardando_str(),   YELLOW, True),
+        "GRAVANDO":    ("GRAVANDO",         RED,    True),
+        "PAUSADO":     ("PAUSADO",          YELLOW, True),
+        "FINALIZANDO": ("FINALIZANDO...",   YELLOW, False),
+        "CONCLUIDO":   ("CONCLUIDO",        GREEN,  False),
     }
     elabel, ecor, episca = estado_map.get(estado, ("?", WHITE, False))
     eshow = elabel if (not episca or blink) else ""
@@ -384,7 +414,7 @@ def draw_ui():
     ]
     # menu — linha 2: player + misc
     linha2 = [
-        (" 9 PLAY ",      GREEN),
+        (" 9 PLAY/PAUSE ", GREEN),
         (" + PROXIMA ",   CYAN),
         (" - ANTERIOR ",  CYAN),
         (" 6 SYNC ",      MAGENTA),
