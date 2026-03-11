@@ -8,8 +8,8 @@ Type=idle
 
 nano ~/.bash_profile
 
-amixer sset 'Front' unmute
-amixer sset 'Front' 80%
+amixer scontrols | grep -o "'[^']*'" | xargs -I{} amixer sset {} unmute 2>/dev/null
+sleep 1
 if [ "$(tty)" = "/dev/tty1" ]; then
     sleep 1
     TERM=linux python3 /usr/local/bin/recorder.py
