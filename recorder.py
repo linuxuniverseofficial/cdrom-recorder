@@ -103,11 +103,13 @@ def iniciar_gravacao(auto=False):
             if "starting" in txt or "write" in txt or "tao" in txt:
                 estado = "GRAVANDO"
                 aguardando_desde = None
-                log(f"Faixa {faixa:02d} gravando")
+                log(f"Faixa {faixa:02d} gravando — play em 3s...")
+                _play_faixa(faixa_src)
                 break
         if estado == "AGUARDANDO":
             estado = "GRAVANDO"
             aguardando_desde = None
+            _play_faixa(faixa_src)
 
     threading.Thread(target=_iniciar, daemon=True).start()
 
@@ -238,7 +240,6 @@ def monitor_rms():
     global ultimo_rms
     import sounddevice as sd
 
-    # força PULSE_SOURCE para o monitor do sink
     os.environ["PULSE_SOURCE"] = PULSE_SOURCE
 
     silencio_desde = som_desde = None
