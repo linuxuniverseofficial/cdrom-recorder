@@ -117,10 +117,13 @@ def pausar(auto=False):
     global proc, estado
     estado = "PAUSADO"
     log(f"{'AUTO' if auto else 'MANUAL'} -- faixa {faixa:02d} fechando...")
+    _proc = proc  # captura referencia local antes de zerar
     def _matar():
-        if proc:
-            try: os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        global proc
+        if _proc:
+            try: os.killpg(os.getpgid(_proc.pid), signal.SIGTERM)
             except: pass
+        proc = None  # zera imediatamente
         subprocess.run(["pkill", "-TERM", "parec"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
