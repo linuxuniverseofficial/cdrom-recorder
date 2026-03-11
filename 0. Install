@@ -10,3 +10,5 @@ sudo apt install sox -y
 # cdparanoia (para modo CDROM)
 sudo apt install cdparanoia -y
 
+# Adjust font to 8x18
+sudo dpkg-reconfigure console-setup
