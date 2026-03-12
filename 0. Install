@@ -1,19 +1,9 @@
-# cdrecord (wodim é o fork no Ubuntu)
-sudo apt install wodim alsa-utils mplayer -y
-
-# pactl + parec (PulseAudio)
-sudo apt install pulseaudio pulseaudio-utils -y
-
-# sox
-sudo apt install sox -y
-
-# cdparanoia (para modo CDROM)
-sudo apt install cdparanoia -y
+# Install
+sudo apt install wodim alsa-utils mplayer pulseaudio pulseaudio-utils sox cdparanoia libportaudio2 python3-pip -y
 
 # Adjust font to 8x18
 sudo dpkg-reconfigure console-setup
 
 # FOR SYNC
-sudo apt install libportaudio2 python3-pip
 pip install sounddevice --break-system-packages
 pip install numpy --break-system-packages
