@@ -256,16 +256,27 @@ def monitor_rms():
     def callback(indata, frames, t, status):
         buf.append(float(np.sqrt(np.mean(indata**2))))
 
+    def _find_input_device():
+        """Busca device de input por nome — ignora HDMI e virtual."""
+        for i, d in enumerate(sd.query_devices()):
+            name = d['name']
+            if d['max_input_channels'] >= 2 and 'VT1705CF' in name:
+                return i
+        # fallback: primeiro device com input real
+        for i, d in enumerate(sd.query_devices()):
+            if d['max_input_channels'] >= 2 and 'hw:' in d['name'] and 'HDMI' not in d['name']:
+                return i
+        return None
+
     while running:
         try:
-            # reabre stream se source mudou
-            if PULSE_SOURCE != ultimo_source:
-                ultimo_source = PULSE_SOURCE
-                os.environ["PULSE_SOURCE"] = PULSE_SOURCE
-                subprocess.run(["pactl", "set-default-source", PULSE_SOURCE],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            dev = _find_input_device()
+            if dev is None:
+                log("RMS: aguardando device de audio...")
+                time.sleep(3)
+                continue
 
-            with sd.InputStream(device='pulse', channels=2, samplerate=44100,
+            with sd.InputStream(device=dev, channels=2, samplerate=44100,
                                 blocksize=4096, callback=callback):
                 while running and PULSE_SOURCE == ultimo_source:
                     time.sleep(0.3)
