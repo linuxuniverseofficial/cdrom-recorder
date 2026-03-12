@@ -214,10 +214,10 @@ def monitor_rms():
                                text=True, timeout=3)
             rms = 0.0
             for linha in (r.stdout + r.stderr).splitlines():
-                if "rms amplitude" in linha.lower():
-                    m = re.search(r"[\d.]+$", linha)
+                if re.search(r"rms\s+amplitude", linha, re.IGNORECASE):
+                    m = re.search(r"[\d.]+\s*$", linha)
                     if m:
-                        rms = float(m.group())
+                        rms = float(m.group().strip())
                         break
             ultimo_rms = rms
 
