@@ -32,8 +32,11 @@ alsa_input.pci-0000_0a_00.4.analog-stereo
 Nesse exemplo, troca p bash_profile:
 
 export PULSE_RUNTIME_PATH=/run/user/1000/pulse
-amixer -c 1 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 1 sset {} unmute 2>/dev/null
+amixer -c 1 sset 'Line Boost' 0% 2>/dev/null
 amixer -c 1 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 1 sset {} 100% 2>/dev/null
+amixer -c 1 sset 'Front Mic' 0% 2>/dev/null
+amixer -c 1 sset 'Rear Mic' 0% 2>/dev/null
+amixer -c 1 sset 'Capture' 50%
 amixer -c 1 sset 'Input Source' 'Line'
 sleep 3
 if [ "$(tty)" = "/dev/tty1" ]; then
