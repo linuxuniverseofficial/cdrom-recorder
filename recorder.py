@@ -256,27 +256,16 @@ def monitor_rms():
     def callback(indata, frames, t, status):
         buf.append(float(np.sqrt(np.mean(indata**2))))
 
-    def _find_device():
-        """Busca device de input por nome — índice muda a cada boot."""
-        for i, d in enumerate(sd.query_devices()):
-            if d['max_input_channels'] >= 2 and 'VT1705CF' in d['name']:
-                return i
-        return None
-
     while running:
         try:
             # reabre stream se source mudou
             if PULSE_SOURCE != ultimo_source:
                 ultimo_source = PULSE_SOURCE
                 os.environ["PULSE_SOURCE"] = PULSE_SOURCE
+                subprocess.run(["pactl", "set-default-source", PULSE_SOURCE],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            dev = _find_device()
-            if dev is None:
-                log("RMS: device nao encontrado, tentando em 3s...")
-                time.sleep(3)
-                continue
-
-            with sd.InputStream(device=dev, channels=2, samplerate=44100,
+            with sd.InputStream(device='pulse', channels=2, samplerate=44100,
                                 blocksize=4096, callback=callback):
                 while running and PULSE_SOURCE == ultimo_source:
                     time.sleep(0.3)
