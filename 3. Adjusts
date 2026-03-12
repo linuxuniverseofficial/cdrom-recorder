@@ -1,8 +1,0 @@
-Bigger Font
-
-sudo dpkg-reconfigure console-setup
-
-UTF-8 (default)
-Guess Optimal Character Set (default)
-Change to Terminus BOLD
-Change to 12x24 (framebuffer only, localhost, not work SSH or Desktop)
