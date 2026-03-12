@@ -1,0 +1,8 @@
+Bigger Font
+
+sudo dpkg-reconfigure console-setup
+
+UTF-8 (default)
+Guess Optimal Character Set (default)
+Change to Terminus
+Change to 12x24
