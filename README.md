@@ -75,3 +75,7 @@ sudo dpkg-reconfigure console-setup
 - Disco não finalizado: TOC ilegível — comportamento normal do drive
 - Input Source volta para Front Mic após reiniciar PulseAudio — corrigido pelo bash_profile
 - Índice dos devices ALSA muda a cada boot — código busca por nome (VT1705CF)
+
+## Testando
+
+parec --device=$(pactl get-default-sink).monitor --format=s16le --rate=44100 --channels=2 | sox -t raw -r 44100 -c 2 -b 16 -e signed - -n trim 0 0.4 stat 2>&1 | grep RMS
