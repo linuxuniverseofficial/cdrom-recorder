@@ -32,24 +32,6 @@ running            = True
 bandeja_aberta     = False
 finalizar_pendente = False
 
-# ── Leitura do TOC do disco ───────────────────────────────
-def ler_faixas_disco():
-    try:
-        r = subprocess.run(
-            ["wodim", f"dev={CD_DEV}", "-toc"],
-            capture_output=True, text=True, timeout=15
-        )
-        output = r.stdout + r.stderr
-        faixas = 0
-        for linha in output.splitlines():
-            m = re.search("track:\\s*(\\d+)", linha, re.IGNORECASE)
-            if m:
-                n = int(m.group(1))
-                if n < 170:
-                    faixas = max(faixas, n)
-        return faixas
-    except Exception:
-        return 0
 
 # ── ANSI ──────────────────────────────────────────────────
 ESC = "\033"
@@ -267,44 +249,50 @@ def monitor_rms():
     global ultimo_rms
     import sounddevice as sd
 
-    os.environ["PULSE_SOURCE"] = PULSE_SOURCE
-
     silencio_desde = som_desde = None
     buf = []
+    ultimo_source = None
 
     def callback(indata, frames, t, status):
         buf.append(float(np.sqrt(np.mean(indata**2))))
 
-    try:
-        with sd.InputStream(device='pulse', channels=2, samplerate=44100,
-                            blocksize=4096, callback=callback):
-            while running:
-                time.sleep(0.3)
-                if buf:
-                    rms = max(buf)
-                    buf.clear()
-                    ultimo_rms = rms
+    while running:
+        try:
+            # reabre stream se source mudou
+            if PULSE_SOURCE != ultimo_source:
+                ultimo_source = PULSE_SOURCE
+                os.environ["PULSE_SOURCE"] = PULSE_SOURCE
 
-                    if sync_ativo:
-                        agora = time.time()
-                        if estado == "GRAVANDO":
-                            if rms < SILENCE_THRESHOLD:
-                                if silencio_desde is None: silencio_desde = agora
-                                elif agora - silencio_desde >= SILENCE_DURATION:
-                                    pausar(auto=True); silencio_desde = som_desde = None
-                            else:
-                                silencio_desde = None
-                        elif estado == "PAUSADO":
-                            if rms > SOUND_THRESHOLD:
-                                if som_desde is None: som_desde = agora
-                                elif agora - som_desde >= SOUND_DURATION:
-                                    iniciar_gravacao(auto=True); som_desde = silencio_desde = None
-                            else:
-                                som_desde = None
-                    else:
-                        silencio_desde = som_desde = None
-    except Exception as e:
-        log(f"RMS erro: {e}")
+            with sd.InputStream(device='pulse', channels=2, samplerate=44100,
+                                blocksize=4096, callback=callback):
+                while running and PULSE_SOURCE == ultimo_source:
+                    time.sleep(0.3)
+                    if buf:
+                        rms = max(buf)
+                        buf.clear()
+                        ultimo_rms = rms
+
+                        if sync_ativo:
+                            agora = time.time()
+                            if estado == "GRAVANDO":
+                                if rms < SILENCE_THRESHOLD:
+                                    if silencio_desde is None: silencio_desde = agora
+                                    elif agora - silencio_desde >= SILENCE_DURATION:
+                                        pausar(auto=True); silencio_desde = som_desde = None
+                                else:
+                                    silencio_desde = None
+                            elif estado == "PAUSADO":
+                                if rms > SOUND_THRESHOLD:
+                                    if som_desde is None: som_desde = agora
+                                    elif agora - som_desde >= SOUND_DURATION:
+                                        iniciar_gravacao(auto=True); som_desde = silencio_desde = None
+                                else:
+                                    som_desde = None
+                        else:
+                            silencio_desde = som_desde = None
+        except Exception as e:
+            log(f"RMS erro: {e}")
+            time.sleep(1)
 
 # ── Blink ─────────────────────────────────────────────────
 def blink_loop():
@@ -454,14 +442,7 @@ def main():
     hide_cursor()
     cls()
 
-    log("Lendo disco...")
-    faixas_existentes = ler_faixas_disco()
-    if faixas_existentes > 0:
-        faixa = faixas_existentes
-        estado = "PAUSADO"
-        log(f"Disco tem {faixas_existentes} faixa(s) — continuando")
-    else:
-        log("Disco vazio — pronto para gravar")
+    log("Pronto para gravar!")
 
     threading.Thread(target=blink_loop,  daemon=True).start()
     threading.Thread(target=monitor_rms, daemon=True).start()
@@ -506,6 +487,7 @@ def main():
             try: os.killpg(os.getpgid(proc_play.pid), signal.SIGTERM)
             except: pass
         print("Ate logo.")
+        os._exit(0)
 
 if __name__ == "__main__":
     main()
