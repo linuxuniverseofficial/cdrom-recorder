@@ -48,18 +48,16 @@ def log(msg):
     if len(log_msgs) > 5: log_msgs.pop(0)
 
 # ── Gravação ──────────────────────────────────────────────
-aguardando_desde = None
 
 def iniciar_gravacao():
-    global proc, faixa, estado, aguardando_desde
+    global proc, faixa, estado
     if estado in ("GRAVANDO", "AGUARDANDO", "FINALIZANDO", "CONCLUIDO"): return
     faixa += 1
     estado = "AGUARDANDO"
-    aguardando_desde = time.time()
     log(f"Faixa {faixa:02d} aguardando...")
 
     def _iniciar():
-        global proc, estado, aguardando_desde
+        global proc, estado
         time.sleep(3)
         if estado != "AGUARDANDO": return
         cmd = (f"parec --device={PULSE_SOURCE} --format=s16le --rate=44100 --channels=2"
@@ -73,12 +71,10 @@ def iniciar_gravacao():
             txt = linha.decode(errors="ignore").lower()
             if "starting" in txt or "write" in txt or "tao" in txt:
                 estado = "GRAVANDO"
-                aguardando_desde = None
                 log(f"Faixa {faixa:02d} gravando")
                 break
         if estado == "AGUARDANDO":
             estado = "GRAVANDO"
-            aguardando_desde = None
 
     threading.Thread(target=_iniciar, daemon=True).start()
 
@@ -130,8 +126,7 @@ def finalizar():
         log("Disco finalizado!")
     threading.Thread(target=_fix, daemon=True).start()
 
-# ── Blink ─────────────────────────────────────────────────
-def blink_loop():
+# ── Blink ─────────────────────────────────────────────────def blink_loop():
     global blink
     while running:
         blink = not blink
@@ -139,9 +134,7 @@ def blink_loop():
 
 # ── UI ────────────────────────────────────────────────────
 def aguardando_str():
-    if aguardando_desde is None: return "GRAVANDO"
-    secs = int(time.time() - aguardando_desde)
-    return f"AGUARDANDO  {secs:02d}s"
+    return "GRAVANDO"
 
 def draw_ui():
     sz   = term_size()
