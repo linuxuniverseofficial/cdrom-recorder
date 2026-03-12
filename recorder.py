@@ -201,35 +201,6 @@ def toggle_play():
 def proxima_faixa():  _play_faixa(faixa_src + 1)
 def faixa_anterior(): _play_faixa(max(1, faixa_src - 1))
 
-def abrir_alsamixer():
-    import pty, select as sel
-    show_cursor()
-    master, slave = pty.openpty()
-    p = subprocess.Popen(["alsamixer"], stdin=slave, stdout=sys.stdout, stderr=sys.stderr)
-    os.close(slave)
-    fd = sys.stdin.fileno()
-    old_attr = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        while p.poll() is None:
-            r, _, _ = sel.select([fd], [], [], 0.05)
-            if r:
-                ch = os.read(fd, 1)
-                if ch == b'*':
-                    os.write(master, b'\x1b')
-                else:
-                    os.write(master, ch)
-    except Exception:
-        pass
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
-        try: os.close(master)
-        except: pass
-        try: p.terminate()
-        except: pass
-    hide_cursor()
-    cls()
-
 # ── Blink ─────────────────────────────────────────────────
 def blink_loop():
     global blink
@@ -321,7 +292,6 @@ def draw_ui():
     linha2 = [
         (" 4 INPUT ",      YELLOW),
         (" 5 PLAY/PAUSE ", GREEN),
-        (" 7 MIXER ",      WHITE),
         (" + PROXIMA ",    CYAN),
         (" - ANTERIOR ",   CYAN),
     ]
@@ -376,7 +346,6 @@ def main():
         '3': finalizar,
         '4': toggle_input,
         '5': toggle_play,
-        '7': abrir_alsamixer,
         '+': proxima_faixa,
         '-': faixa_anterior,
     }
