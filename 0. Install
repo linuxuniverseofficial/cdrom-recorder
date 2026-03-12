@@ -4,3 +4,47 @@ sudo apt install wodim alsa-utils mplayer pulseaudio pulseaudio-utils sox cdpara
 # FOR SYNC
 pip install sounddevice --break-system-packages
 pip install numpy --break-system-packages
+
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
+sudo nano /etc/systemd/system/getty@tty1.service.d/autologin.conf
+
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --noissue --autologin administrador %I $TERM
+Type=idle
+
+nano ~/.bash_profile
+
+export PULSE_RUNTIME_PATH=/run/user/1000/pulse
+amixer scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 0 sset {} unmute 2>/dev/null
+amixer -c 0 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 0 sset {} 100% 2>/dev/null
+amixer sset 'Input Source' 'Line'
+sleep 3
+if [ "$(tty)" = "/dev/tty1" ]; then
+    sleep 1
+    TERM=linux python3 /usr/local/bin/recorder.py
+fi
+
+mkdir -p ~/.config/pulse
+
+echo '.include /etc/pulse/default.pa
+set-default-sink alsa_output.pci-0000_00_1b.0.analog-stereo' > ~/.config/pulse/default.pa
+
+sudo alsactl store
+sudo systemctl enable alsa-restore
+sudo systemctl enable alsa-state
+sudo systemctl start alsa-state
+
+reboot
+
+$ alsamixer
+set autio MM to 0
+UNmute!
+
+# Bigger Font
+sudo dpkg-reconfigure console-setup
+
+UTF-8 (default)
+Guess Optimal Character Set (default)
+Change to Terminus BOLD
+Change to 12x24 (framebuffer only, localhost, not work SSH or Desktop)
