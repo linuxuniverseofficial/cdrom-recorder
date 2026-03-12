@@ -1,9 +1,6 @@
 # Install
 sudo apt install wodim alsa-utils mplayer pulseaudio pulseaudio-utils sox cdparanoia libportaudio2 python3-pip -y
 
-# Adjust font to 8x18
-sudo dpkg-reconfigure console-setup
-
 # FOR SYNC
 pip install sounddevice --break-system-packages
 pip install numpy --break-system-packages
