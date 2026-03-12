@@ -2,10 +2,8 @@
 """
 CD RECORDER — UI em ANSI puro, sem curses.
 Funciona em qualquer TTY Linux headless.
-RMS via sounddevice + PULSE_SOURCE (monitor loopback).
 """
 import sys, os, time, signal, subprocess, threading, re, tty, termios, select
-import numpy as np
 
 # ── Dispositivos ──────────────────────────────────────────
 CD_DEV        = "/dev/sr0"
@@ -14,18 +12,10 @@ SOURCE_LINEIN  = "alsa_input.pci-0000_00_1b.0.analog-stereo"
 PULSE_SOURCE   = SOURCE_LINEIN  # default
 input_modo     = "LINEIN"
 
-# ── Thresholds SYNC ───────────────────────────────────────
-SILENCE_THRESHOLD = 0.005
-SILENCE_DURATION  = 2.0
-SOUND_THRESHOLD   = 0.01
-SOUND_DURATION    = 0.5
-
 # ── Estado global ─────────────────────────────────────────
 proc           = None
 faixa          = 0
 estado         = "PRONTO"
-sync_ativo     = False
-ultimo_rms     = 0.0
 log_msgs       = []
 blink              = False
 running            = True
@@ -159,10 +149,6 @@ def finalizar():
         estado = "CONCLUIDO"; log("Disco finalizado!")
     threading.Thread(target=_fix, daemon=True).start()
 
-def toggle_sync():
-    global sync_ativo
-    sync_ativo = not sync_ativo
-    log(f"SYNC {'ATIVADO' if sync_ativo else 'DESATIVADO'}")
 
 def toggle_bandeja():
     global bandeja_aberta
@@ -244,69 +230,6 @@ def abrir_alsamixer():
     hide_cursor()
     cls()
 
-# ── Monitor RMS via sounddevice ───────────────────────────
-def monitor_rms():
-    global ultimo_rms
-    import sounddevice as sd
-
-    silencio_desde = som_desde = None
-    buf = []
-    ultimo_source = None
-
-    def callback(indata, frames, t, status):
-        buf.append(float(np.sqrt(np.mean(indata**2))))
-
-    def _find_input_device():
-        """Busca device de input por nome — ignora HDMI e virtual."""
-        for i, d in enumerate(sd.query_devices()):
-            name = d['name']
-            if d['max_input_channels'] >= 2 and 'VT1705CF' in name:
-                return i
-        # fallback: primeiro device com input real
-        for i, d in enumerate(sd.query_devices()):
-            if d['max_input_channels'] >= 2 and 'hw:' in d['name'] and 'HDMI' not in d['name']:
-                return i
-        return None
-
-    while running:
-        try:
-            dev = _find_input_device()
-            if dev is None:
-                log("RMS: aguardando device de audio...")
-                time.sleep(3)
-                continue
-
-            with sd.InputStream(device=dev, channels=2, samplerate=44100,
-                                blocksize=4096, callback=callback):
-                while running and PULSE_SOURCE == ultimo_source:
-                    time.sleep(0.3)
-                    if buf:
-                        rms = max(buf)
-                        buf.clear()
-                        ultimo_rms = rms
-
-                        if sync_ativo:
-                            agora = time.time()
-                            if estado == "GRAVANDO":
-                                if rms < SILENCE_THRESHOLD:
-                                    if silencio_desde is None: silencio_desde = agora
-                                    elif agora - silencio_desde >= SILENCE_DURATION:
-                                        pausar(auto=True); silencio_desde = som_desde = None
-                                else:
-                                    silencio_desde = None
-                            elif estado == "PAUSADO":
-                                if rms > SOUND_THRESHOLD:
-                                    if som_desde is None: som_desde = agora
-                                    elif agora - som_desde >= SOUND_DURATION:
-                                        iniciar_gravacao(auto=True); som_desde = silencio_desde = None
-                                else:
-                                    som_desde = None
-                        else:
-                            silencio_desde = som_desde = None
-        except Exception as e:
-            log(f"RMS erro: {e}")
-            time.sleep(3)
-
 # ── Blink ─────────────────────────────────────────────────
 def blink_loop():
     global blink
@@ -342,15 +265,13 @@ def draw_ui():
     # topo
     L.append(DM + "╔" + "═" * W + "╗" + R)
 
-    # titulo + input + sync
+    # titulo + input
     title      = " CD RECORDER "
     input_plain = f" {input_modo} "
     input_col   = B + YELLOW + input_plain + R if input_modo == "LINEIN" else DM + input_plain + R
-    sync_plain  = "SYNC ON " if sync_ativo else "SYNC OFF"
-    sync_col    = B + GREEN + sync_plain + R if sync_ativo else DM + sync_plain + R
     title_col   = B + CYAN + title + R
-    gap = W - len(title) - len(input_plain) - len(sync_plain) - 3
-    L.append(DM + "║" + R + title_col + " " * max(1, gap) + input_col + " " + sync_col + " " + DM + "║" + R)
+    gap = W - len(title) - len(input_plain) - 2
+    L.append(DM + "║" + R + title_col + " " * max(1, gap) + input_col + " " + DM + "║" + R)
 
     L.append(sep_line())
 
@@ -374,15 +295,6 @@ def draw_ui():
     L.append(border(fstr, B + WHITE + fstr + R))
 
     L.append(border(""))
-
-    # VU meter
-    vu_w    = min(36, W - 8)
-    vu_fill = int(min(ultimo_rms / 0.3, 1.0) * vu_w)
-    vu_bar  = "█" * vu_fill + "░" * (vu_w - vu_fill)
-    vcor    = GREEN if ultimo_rms < 0.1 else YELLOW if ultimo_rms < 0.2 else RED
-    vu_plain   = f"RMS {vu_bar}"
-    vu_colored = DM + "RMS " + R + vcor + vu_bar + R
-    L.append(border(vu_plain, vu_colored))
 
     L.append(border(""))
 
@@ -409,7 +321,6 @@ def draw_ui():
     linha2 = [
         (" 4 INPUT ",      YELLOW),
         (" 5 PLAY/PAUSE ", GREEN),
-        (" 6 SYNC ",       MAGENTA),
         (" 7 MIXER ",      WHITE),
         (" + PROXIMA ",    CYAN),
         (" - ANTERIOR ",   CYAN),
@@ -458,7 +369,6 @@ def main():
     log("Pronto para gravar!")
 
     threading.Thread(target=blink_loop,  daemon=True).start()
-    threading.Thread(target=monitor_rms, daemon=True).start()
 
     ACOES = {
         '1': lambda: iniciar_gravacao(False),
@@ -466,7 +376,6 @@ def main():
         '3': finalizar,
         '4': toggle_input,
         '5': toggle_play,
-        '6': toggle_sync,
         '7': abrir_alsamixer,
         '+': proxima_faixa,
         '-': faixa_anterior,
