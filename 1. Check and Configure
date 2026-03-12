@@ -28,3 +28,19 @@ set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo' > ~/.config/pulse/d
 
 Agora atualiza o PULSE_SOURCE no script para esse PC:
 alsa_input.pci-0000_0a_00.4.analog-stereo
+
+Nesse exemplo, troca p bash_profile:
+
+export PULSE_RUNTIME_PATH=/run/user/1000/pulse
+amixer -c 1 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 1 sset {} unmute 2>/dev/null
+amixer -c 1 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 1 sset {} 100% 2>/dev/null
+amixer -c 1 sset 'Input Source' 'Line'
+sleep 3
+if [ "$(tty)" = "/dev/tty1" ]; then
+    sleep 1
+    TERM=linux python3 /usr/local/bin/recorder.py
+fi
+
+Default.pa tambem:
+echo '.include /etc/pulse/default.pa
+set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo' > ~/.config/pulse/default.pa
