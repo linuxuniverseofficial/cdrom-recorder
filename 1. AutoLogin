@@ -8,6 +8,7 @@ Type=idle
 
 nano ~/.bash_profile
 
+export PULSE_RUNTIME_PATH=/run/user/1000/pulse
 amixer scontrols | grep -o "'[^']*'" | xargs -I{} amixer sset {} unmute 2>/dev/null
 amixer sset 'Input Source' 'Line'
 sleep 1
