@@ -1,0 +1,30 @@
+# 1. Ver todas as placas e devices
+pactl list short sinks
+pactl list short sources
+
+# 2. Acordar tudo
+pactl suspend-source alsa_input.pci-0000_0a_00.4.analog-stereo 0
+pactl suspend-sink alsa_output.pci-0000_0a_00.4.analog-stereo 0
+
+# 3. Definir output padrão como analógico (não HDMI)
+pactl set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo
+
+# 4. Confirmar Input Source em Line
+amixer -c 1 sset 'Input Source' 'Line' 2>/dev/null || amixer sset 'Input Source' 'Line' 2>/dev/null
+
+# 5. Testar RMS
+parec --device=alsa_input.pci-0000_0a_00.4.analog-stereo --format=s16le --rate=44100 --channels=2 | sox -t raw -r 44100 -c 2 -b 16 -e signed - -n trim 0 0.4 stat 2>&1 | grep RMS
+
+# PERMANENT:
+
+# Acorda devices e define padrão analógico
+pactl set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo
+pactl suspend-source alsa_input.pci-0000_0a_00.4.analog-stereo 0
+pactl suspend-sink alsa_output.pci-0000_0a_00.4.analog-stereo 0
+amixer -c 1 sset 'Input Source' 'Line' 2>/dev/null
+
+echo '.include /etc/pulse/default.pa
+set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo' > ~/.config/pulse/default.pa
+
+Agora atualiza o PULSE_SOURCE no script para esse PC:
+alsa_input.pci-0000_0a_00.4.analog-stereo
