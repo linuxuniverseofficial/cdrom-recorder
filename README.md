@@ -218,8 +218,3 @@ amixer -c 1 sset 'Capture' 50%
 | `alsa-utils` | Configuração do mixer (amixer) |
 | `python3` | Runtime do script |
 
----
-
-## Licença
-
-MIT
