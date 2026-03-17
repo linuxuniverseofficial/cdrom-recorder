@@ -29,7 +29,7 @@ set-default-sink alsa_output.pci-0000_0a_00.4.analog-stereo' > ~/.config/pulse/d
 Agora atualiza o PULSE_SOURCE no script para esse PC:
 alsa_input.pci-0000_0a_00.4.analog-stereo
 
-Nesse exemplo, troca p bash_profile, isso sendo outro caminho, outra config ok:
+Nesse exemplo, troca p bash_profile, isso sendo outro caminho, outra config ok (edit NAME sset to set somethign more):
 
 export PULSE_RUNTIME_PATH=/run/user/1000/pulse
 amixer -c 1 sset 'Line Boost' 0% 2>/dev/null
