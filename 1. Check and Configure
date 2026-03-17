@@ -1,6 +1,6 @@
 # 1. Ver todas as placas e devices
-pactl list short sinks
-pactl list short sources
+sudo pactl list short sinks
+sudo pactl list short sources
 
 # 2. Acordar tudo
 pactl suspend-source alsa_input.pci-0000_0a_00.4.analog-stereo 0
