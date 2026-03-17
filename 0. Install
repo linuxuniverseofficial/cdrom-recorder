@@ -13,6 +13,11 @@ ExecStart=
 ExecStart=-/sbin/agetty --noissue --autologin administrador %I $TERM
 Type=idle
 
+amixer -c 0 scontrols
+get the names and set bellow.
+EVERYTHING ON 100, but mics low!
+GAIN or CAPTURE keep low ~80%
+
 nano ~/.bash_profile
 
 export PULSE_RUNTIME_PATH=/run/user/1000/pulse
