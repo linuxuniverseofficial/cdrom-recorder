@@ -16,10 +16,11 @@ Type=idle
 nano ~/.bash_profile
 
 export PULSE_RUNTIME_PATH=/run/user/1000/pulse
-amixer -c 0 sset 'Line Boost' 0% 2>/dev/null
-amixer -c 0 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 1 sset {} 100% 2>/dev/null
+# Restaura mixer
+amixer -c 0 scontrols | grep -o "'[^']*'" | xargs -I{} amixer -c 0 sset {} 100% 2>/dev/null
 amixer -c 0 sset 'Front Mic' 0% 2>/dev/null
 amixer -c 0 sset 'Rear Mic' 0% 2>/dev/null
+amixer -c 0 sset 'Line Boost' 0% 2>/dev/null
 amixer -c 0 sset 'Capture' 50%
 amixer -c 0 sset 'Input Source' 'Line'
 sleep 3
@@ -27,6 +28,8 @@ if [ "$(tty)" = "/dev/tty1" ]; then
     sleep 1
     TERM=linux python3 /usr/local/bin/recorder.py
 fi
+
+ATENTO AO NUMERO DA PLACA ACIMA!
 
 mkdir -p ~/.config/pulse
 
