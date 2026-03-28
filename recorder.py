@@ -201,6 +201,99 @@ def toggle_bandeja():
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         bandeja_aberta = True
 
+# ── Cópia de CD ──────────────────────────────────────────
+copiar_estado   = ""   # mensagem de progresso da cópia
+copiar_aguarda  = False  # True = aguardando CD virgem
+
+def copiar_cd():
+    global estado, copiar_estado, copiar_aguarda
+    if estado not in ("PRONTO", "PAUSADO", "CONCLUIDO"): return
+    if copiar_aguarda: return
+
+    def _copiar():
+        global estado, copiar_estado, copiar_aguarda
+        import shutil, glob
+
+        tmp = "/tmp/cdcopy"
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp, exist_ok=True)
+
+        # ── Leitura ──
+        estado = "COPIANDO"
+        log("Lendo CD com cdparanoia...")
+
+        try:
+            p = subprocess.Popen(
+                ["cdparanoia", "-B", "-d", CD_DEV, "--", "-1"],
+                cwd=tmp,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE
+            )
+            for linha in p.stderr:
+                txt = linha.decode(errors="ignore")
+                m = re.search(r"\[track\s+(\d+)\]", txt, re.IGNORECASE)
+                if m:
+                    copiar_estado = f"Lendo faixa {int(m.group(1)):02d}..."
+                    log(copiar_estado)
+            p.wait()
+        except Exception as e:
+            log(f"Erro leitura: {e}")
+            estado = "PRONTO"
+            return
+
+        wavs = sorted(glob.glob(f"{tmp}/*.wav"))
+        if not wavs:
+            log("Nenhuma faixa lida!")
+            estado = "PRONTO"
+            return
+
+        log(f"{len(wavs)} faixa(s) lida(s). Ejete e insira virgem.")
+        subprocess.run(["eject", CD_DEV],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        copiar_aguarda = True
+        estado = "PRONTO"
+
+        # aguarda confirmação via tecla 4
+        while copiar_aguarda and running:
+            time.sleep(0.2)
+
+        # ── Gravação ──
+        estado = "COPIANDO"
+        log("Gravando no CD virgem...")
+        cmd = ["wodim", f"dev={CD_DEV}", "speed=1", "-tao", "-audio"] + wavs
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            faixa_atual = 0
+            for linha in p.stderr:
+                txt = linha.decode(errors="ignore")
+                m = re.search(r"track\s+(\d+)", txt, re.IGNORECASE)
+                if m and int(m.group(1)) != faixa_atual:
+                    faixa_atual = int(m.group(1))
+                    copiar_estado = f"Gravando faixa {faixa_atual:02d}..."
+                    log(copiar_estado)
+            p.wait()
+        except Exception as e:
+            log(f"Erro gravação: {e}")
+
+        subprocess.run(["wodim", f"dev={CD_DEV}", "-fix"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log("Cópia concluída! Ejetando...")
+        subprocess.run(["eject", CD_DEV],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        shutil.rmtree(tmp, ignore_errors=True)
+        copiar_estado = ""
+        estado = "CONCLUIDO"
+
+    threading.Thread(target=_copiar, daemon=True).start()
+
+def confirmar_virgem():
+    """Chamado pelo botão 4 enquanto aguarda CD virgem."""
+    global copiar_aguarda
+    if copiar_aguarda:
+        copiar_aguarda = False
+        log("CD virgem confirmado, gravando...")
+
 # ── Monitor RMS via parec + sox ───────────────────────────
 def monitor_rms():
     global ultimo_rms
@@ -284,12 +377,13 @@ def draw_ui():
 
     # estado
     estado_map = {
-        "PRONTO":      ("PRONTO",         WHITE,  False),
-        "AGUARDANDO":  ("GRAVANDO",        RED,    True),
-        "GRAVANDO":    ("GRAVANDO",        RED,    True),
-        "PAUSADO":     ("PAUSADO",         YELLOW, True),
-        "FINALIZANDO": ("FINALIZANDO...",  YELLOW, False),
-        "CONCLUIDO":   ("CONCLUIDO",       GREEN,  False),
+        "PRONTO":      ("PRONTO",         WHITE,   False),
+        "AGUARDANDO":  ("GRAVANDO",        RED,     True),
+        "GRAVANDO":    ("GRAVANDO",        RED,     True),
+        "PAUSADO":     ("PAUSADO",         YELLOW,  True),
+        "FINALIZANDO": ("FINALIZANDO...",  YELLOW,  False),
+        "CONCLUIDO":   ("CONCLUIDO",       GREEN,   False),
+        "COPIANDO":    ("COPIANDO...",     MAGENTA, True),
     }
     elabel, ecor, episca = estado_map.get(estado, ("?", WHITE, False))
     eshow = elabel if (not episca or blink) else ""
@@ -337,6 +431,7 @@ def draw_ui():
     linha2 = [
         (" 4 INPUT ",   YELLOW),
         (" 5 SYNC ",    MAGENTA),
+        (" 7 COPIAR CD ", GREEN) if not copiar_aguarda else (" 7 VIRGEM OK ", YELLOW),
         (" 0 SAIR ",    WHITE),
     ]
 
@@ -407,6 +502,7 @@ def main():
         '3': finalizar,
         '4': toggle_input,
         '5': toggle_sync,
+        '7': lambda: confirmar_virgem() if copiar_aguarda else copiar_cd(),
     }
 
     try:
