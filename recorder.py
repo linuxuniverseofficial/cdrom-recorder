@@ -224,7 +224,7 @@ def copiar_cd():
 
         try:
             p = subprocess.Popen(
-                ["cdparanoia", "-B", "-d", CD_DEV, "--", "-1"],
+                ["cdparanoia", "-B", "-d", CD_DEV],
                 cwd=tmp,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE
